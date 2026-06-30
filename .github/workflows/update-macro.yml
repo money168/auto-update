@@ -1,0 +1,44 @@
+name: 每日市場指標數據更新
+
+on:
+  schedule:
+    # 每天台灣時間早上 08:00 (UTC 00:00) 執行抓取
+    - cron: '0 0 * * *'
+  workflow_dispatch: 
+
+jobs:
+  update-macro-data:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+
+    steps:
+      - name: 檢出儲存庫
+        uses: actions/checkout@v4
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安裝相依套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 執行資料抓取腳本
+        run: python scraper.py
+
+      - name: Commit 並 Push 變更
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data.csv
+          
+          # 檢查 data.csv 是否有變動
+          if git diff-index --quiet HEAD --; then
+            echo "數據未更新，無需 Commit。"
+          else
+            git commit -m "data: 自動更新市場指標數據 [skip ci]"
+            git push
+          fi
