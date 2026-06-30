@@ -41,6 +41,6 @@ jobs:
             echo "資料沒有變更，無需 Commit。"
           else
             # [skip ci] 標籤可避免這個 commit 再次觸發其他的 Action，造成無限迴圈
-            git commit -m "chore: $(date) 自動更新資料 [skip ci]"
+            git commit -m "chore: 自動更新資料 [skip ci]"
             git push
           fi
