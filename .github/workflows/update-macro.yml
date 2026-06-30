@@ -1,0 +1,108 @@
+name: 每日市場指標自動更新與推播
+
+# ==========================================
+# ⏰ 時間修改指南 (GitHub 只吃 UTC 時間，請將台灣時間減去 8 小時)
+# 格式: 分 時 日 月 星期
+# 範例: 台灣時間 08:30 -> UTC 時間 00:30 -> '30 0 * * *'
+# ==========================================
+on:
+  schedule:
+    - cron: '30 0 * * *'  # [台灣 08:30] 
+    - cron: '30 4 * * *'  # [台灣 12:30] 
+    - cron: '30 12 * * *' # [台灣 20:30] 
+  workflow_dispatch: 
+
+jobs:
+  update-and-notify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write 
+      
+    # 🌟 關鍵設定：將這台虛擬機的系統時區強制設定為台灣時間
+    # 這樣 Python 腳本內的 datetime.now() 就會直接輸出正確的台灣時間！
+    env:
+      TZ: Asia/Taipei 
+
+    steps:
+      - name: 檢出儲存庫
+        uses: actions/checkout@v4
+
+      - name: 設定 Python 環境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: 安裝相依套件
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: 執行資料抓取腳本 (產出 CSV 與摘要文字檔)
+        run: python scraper.py
+
+      - name: Commit 並 Push 變更至 CSV
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add data.csv
+          
+          if git diff-index --quiet HEAD --; then
+            echo "數據未更新，無需 Commit。"
+          else
+            git commit -m "data: 自動更新市場指標數據 [skip ci]"
+            git push
+          fi
+
+      - name: 將最新報價傳送至 Teams (Adaptive Card)
+        env:
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+        run: |
+          MESSAGE=$(cat latest_summary.txt)
+          
+          jq -n \
+            --arg msg "$MESSAGE" \
+            --arg repo "${{ github.repository }}" \
+            '{
+              "type": "message",
+              "attachments": [
+                {
+                  "contentType": "application/vnd.microsoft.card.adaptive",
+                  "contentUrl": null,
+                  "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [
+                      {
+                        "type": "TextBlock",
+                        "text": "📈 市場指標最新報價",
+                        "weight": "Bolder",
+                        "size": "Large",
+                        "color": "Good"
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": $msg,
+                        "wrap": true
+                      },
+                      {
+                        "type": "FactSet",
+                        "facts": [
+                          {
+                            "title": "資料來源:",
+                            "value": "Yahoo Finance"
+                          },
+                          {
+                            "title": "資料儲存庫:",
+                            "value": $repo
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }' > payload.json
+
+          echo "正在發送報價卡片至 Teams..."
+          curl -H "Content-Type: application/json" -d @payload.json $TEAMS_WEBHOOK_URL
