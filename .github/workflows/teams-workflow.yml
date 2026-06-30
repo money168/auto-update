@@ -1,0 +1,72 @@
+name: 傳送 Teams 卡片訊息 (Teams Workflow)
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: '請輸入要測試發送的訊息內容'
+        required: true
+        default: '這是一條來自 GitHub Actions 的測試訊息！'
+
+jobs:
+  send-teams-notification:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 產生並發送 Adaptive Card 到 Teams
+        env:
+          # 從 Secrets 中讀取 Webhook URL
+          TEAMS_WEBHOOK_URL: ${{ secrets.TEAMS_WEBHOOK_URL }}
+          # 讀取手動輸入的測試訊息
+          MESSAGE: ${{ inputs.message }}
+        run: |
+          # 使用 jq 安全地建構 Adaptive Card JSON
+          # 將 GitHub 的變數 (如儲存庫名稱、觸發者) 和輸入訊息帶入 JSON 中
+          jq -n \
+            --arg msg "$MESSAGE" \
+            --arg repo "${{ github.repository }}" \
+            --arg actor "${{ github.actor }}" \
+            '{
+              "type": "message",
+              "attachments": [
+                {
+                  "contentType": "application/vnd.microsoft.card.adaptive",
+                  "contentUrl": null,
+                  "content": {
+                    "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+                    "type": "AdaptiveCard",
+                    "version": "1.4",
+                    "body": [
+                      {
+                        "type": "TextBlock",
+                        "text": "🚀 GitHub Actions 執行通知",
+                        "weight": "Bolder",
+                        "size": "Large",
+                        "color": "Accent"
+                      },
+                      {
+                        "type": "TextBlock",
+                        "text": $msg,
+                        "wrap": true
+                      },
+                      {
+                        "type": "FactSet",
+                        "facts": [
+                          {
+                            "title": "專案名稱:",
+                            "value": $repo
+                          },
+                          {
+                            "title": "觸發人員:",
+                            "value": $actor
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }' > payload.json
+
+          # 使用 curl 將產生的 payload.json 發送到 Teams Webhook
+          echo "正在發送請求到 Teams..."
+          curl -H "Content-Type: application/json" -d @payload.json $TEAMS_WEBHOOK_URL
