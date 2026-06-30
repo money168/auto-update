@@ -1,0 +1,46 @@
+name: 自動更新與存檔資料 (Auto Update Data)
+
+# 設定觸發條件
+on:
+  schedule:
+    # 使用 cron 語法，這裡設定為每天 UTC 時間 00:00 (台灣時間 08:00) 執行
+    - cron: '0 0 * * *'
+  workflow_dispatch: 
+    # 允許在 GitHub 網頁上點擊按鈕手動觸發（測試時非常好用）
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 再次確保擁有寫入權限
+
+    steps:
+      # 1. 檢出你的儲存庫程式碼，讓 Action 可以在這個目錄下工作
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. 這裡放入你實際處理資料的指令 (例如執行 Python 腳本、Node.js 爬蟲等)
+      # 此處以簡單的 Shell 指令生成一個文字檔作為示範
+      - name: 產生或更新資料
+        run: |
+          echo "最後更新時間：$(date)" > auto_data.txt
+          # 如果你有寫腳本，可以換成類似: python crawler.py 或 node index.js
+
+      # 3. 將變更提交 (Commit) 並推送 (Push) 回 GitHub
+      - name: Commit and Push changes
+        run: |
+          # 設定虛擬的 Git 使用者資訊
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # 將所有變更加入暫存區
+          git add .
+          
+          # 檢查是否有檔案變更，避免在沒有變更的情況下 commit 導致 Action 噴錯失敗
+          if git diff-index --quiet HEAD --; then
+            echo "資料沒有變更，無需 Commit。"
+          else
+            # [skip ci] 標籤可避免這個 commit 再次觸發其他的 Action，造成無限迴圈
+            git commit -m "chore: 自動更新資料 [skip ci]"
+            git push
+          fi
